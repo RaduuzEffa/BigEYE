@@ -118,22 +118,29 @@ async function startCameraPreview(deviceId) {
         recState.stream.getTracks().forEach(track => track.stop());
     }
 
+async function startCameraPreview(deviceId) {
+    if (recState.stream) {
+        recState.stream.getTracks().forEach(track => track.stop());
+    }
+
     try {
         if (deviceId === 'screen') {
-            // Request Screen with System Audio
             recState.stream = await navigator.mediaDevices.getDisplayMedia({
                 video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
-                audio: true // Captures system/tab audio
+                audio: true
             });
             
-            // Handle user clicking "Stop sharing" in the browser UI
             recState.stream.getVideoTracks()[0].onended = () => {
                 if (recState.isRecording) stopRecordingSequence();
             };
         } else {
-            // Request Physical Camera
+            // Request Physical Camera - more relaxed for iPhone/Continuity
             const constraints = {
-                video: { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+                video: { 
+                    deviceId: deviceId ? { ideal: deviceId } : undefined,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
                 audio: true
             };
             recState.stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -143,12 +150,19 @@ async function startCameraPreview(deviceId) {
         if (cameraPreview) {
             cameraPreview.srcObject = recState.stream;
             cameraPreview.classList.remove('hidden');
+            cameraPreview.style.display = 'block';
+            cameraPreview.muted = true; // Preview must be muted to prevent feedback loop
+            cameraPreview.play().catch(e => console.log('Autoplay blocked:', e));
+            
             if (mainPlayer) mainPlayer.style.display = 'none';
             if (dropZone) dropZone.style.display = 'none';
+            if (document.getElementById('player-container')) {
+                document.getElementById('player-container').classList.remove('hidden');
+            }
         }
     } catch (err) {
         console.error('Chyba při spouštění náhledu:', err);
-        alert('Nepodařilo se spustit zdroj. Možná jste zrušili sdílení nebo nepovolili přístup.');
+        alert('Nepodařilo se spustit zdroj. Zkuste to znovu nebo připojte iPhone kabelem.');
         cameraSelect.value = '';
     }
 }
@@ -161,35 +175,48 @@ async function startRecordingSequence() {
 
     recState.chunksFallback = [];
     recState.writableStream = null;
+    recState.fileHandle = null;
 
     let mimeType = 'video/webm';
     let extension = '.webm';
-    
     if (MediaRecorder.isTypeSupported('video/mp4')) {
         mimeType = 'video/mp4';
         extension = '.mp4';
-    } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
-        mimeType = 'video/webm; codecs=h264';
     }
 
-    // DIRECT TO DISK STREAMING (File System Access API)
-    if ('showSaveFilePicker' in window) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const suggestedName = `BigEYE_Zaznam_${timestamp}${extension}`;
+
+    // Prefer using the directory handle selected in the sidebar
+    if (window.state && window.state.dirHandle) {
         try {
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            const fileHandle = await window.showSaveFilePicker({
-                suggestedName: `BigEYE_Zaznam_${timestamp}${extension}`,
+            recState.fileHandle = await window.state.dirHandle.getFileHandle(suggestedName, { create: true });
+            recState.writableStream = await recState.fileHandle.createWritable();
+        } catch (err) {
+            console.error('Automatický zápis do složky selhal:', err);
+        }
+    }
+
+    // Fallback to picker
+    if (!recState.writableStream && 'showSaveFilePicker' in window) {
+        try {
+            recState.fileHandle = await window.showSaveFilePicker({
+                suggestedName: suggestedName,
                 types: [{
                     description: 'Video File',
                     accept: { [mimeType.split(';')[0]]: [extension] },
                 }],
             });
-            recState.writableStream = await fileHandle.createWritable();
+            recState.writableStream = await recState.fileHandle.createWritable();
         } catch (err) {
             console.warn('Výběr souboru byl zrušen:', err);
-            return; // Cancel recording if user doesn't pick a file
+            return;
         }
-    } else {
-        alert('Váš prohlížeč nepodporuje přímý stream na disk. Doporučujeme použít Chrome/Edge pro velké soubory.');
+    }
+
+    if (!recState.writableStream) {
+        alert('Nahrávání nelze spustit bez přístupu k disku (povolte přístup ke složce nebo vyberte soubor).');
+        return;
     }
 
     btnStartRecord.style.display = 'none';
@@ -198,77 +225,82 @@ async function startRecordingSequence() {
 
     recState.isRecording = true;
     recState.recordingStartTime = Date.now();
-    recState.timerInterval = setInterval(updateTimerDisplay, 1000);
+    startTimer();
 
-    const recorder = new MediaRecorder(recState.stream, { mimeType: mimeType });
+    const recorder = new MediaRecorder(recState.stream, { 
+        mimeType,
+        videoBitsPerSecond: 8000000 // 8 Mbps for premium quality
+    });
 
     recorder.ondataavailable = async (e) => {
-        if (e.data.size > 0) {
-            if (recState.writableStream) {
-                // Stream directly to hard drive (zero RAM cost!)
-                try {
-                    await recState.writableStream.write(e.data);
-                } catch (err) {
-                    console.error('Chyba při zápisu na disk:', err);
-                }
-            } else {
-                // Fallback for Safari/Firefox
-                recState.chunksFallback.push(e.data);
+        if (e.data.size > 0 && recState.writableStream) {
+            try {
+                await recState.writableStream.write(e.data);
+            } catch (err) {
+                console.error('Chyba při zápisu:', err);
             }
         }
     };
 
     recorder.onstop = async () => {
         if (recState.writableStream) {
-            try {
-                await recState.writableStream.close();
-                recState.writableStream = null;
-                alert('Nahrávání úspěšně uloženo přímo na disk!');
-            } catch (err) {
-                console.error('Chyba při uzavírání souboru:', err);
+            await recState.writableStream.close();
+            
+            // AUTOMATICALLY ADD TO QUEUE
+            if (recState.fileHandle && window.addToQueue) {
+                const file = await recState.fileHandle.getFile();
+                window.addToQueue(file);
+                console.log('Video přidáno do fronty.');
             }
-        } else if (recState.chunksFallback.length > 0) {
-            // Fallback download
-            const blob = new Blob(recState.chunksFallback, { type: 'video/webm' });
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `BigEYE_Zaznam_${timestamp}.webm`;
-            a.click();
-            URL.revokeObjectURL(a.href);
         }
+        recState.isRecording = false;
+        stopTimer();
     };
 
-    // Request data every 2 seconds to write chunks progressively
-    recorder.start(2000); 
+    recorder.start(1000); 
     recState.mediaRecorder = recorder;
 }
 
 function stopRecordingSequence() {
-    recState.isRecording = false;
-    clearInterval(recState.timerInterval);
-
     if (recState.mediaRecorder && recState.mediaRecorder.state !== 'inactive') {
         recState.mediaRecorder.stop();
     }
+
+    recState.isRecording = false;
+    stopTimer();
 
     btnStartRecord.style.display = 'flex';
     btnStopRecord.style.display = 'none';
     recordingStatus.classList.add('hidden');
     recTimeDisplay.textContent = '00:00';
     
-    // Stop tracks
+    // Stop tracks and clean up preview
     if (recState.stream) {
         recState.stream.getTracks().forEach(t => t.stop());
         recState.stream = null;
         cameraSelect.value = '';
         if (cameraPreview) {
             cameraPreview.classList.add('hidden');
+            cameraPreview.style.display = 'none';
             cameraPreview.srcObject = null;
         }
-        if (dropZone && !mainPlayer.src) dropZone.style.display = 'flex';
+        if (dropZone) {
+            const mainPlayer = document.getElementById('main-player');
+            if (mainPlayer && !mainPlayer.src) {
+                dropZone.style.display = 'flex';
+                dropZone.classList.remove('hidden');
+            }
+        }
         if (mainPlayer && mainPlayer.src) mainPlayer.style.display = 'block';
     }
+}
+
+function startTimer() {
+    recState.timerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+function stopTimer() {
+    clearInterval(recState.timerInterval);
 }
 
 function updateTimerDisplay() {
