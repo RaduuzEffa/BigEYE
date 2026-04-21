@@ -56,21 +56,33 @@ function populateCameraSelect(videoDevices) {
 }
 
 function setupRecorderListeners() {
+    // Automatická aktualizace seznamu kamer při připojení iPhonu
+    navigator.mediaDevices.addEventListener('devicechange', async () => {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        populateCameraSelect(videoDevices);
+    });
+
     const btnRefreshCameras = document.getElementById('btn-refresh-cameras');
     if (btnRefreshCameras) {
         btnRefreshCameras.addEventListener('click', async () => {
             try {
-                // Vyžádání oprávnění, aby prohlížeč odemkl skutečné názvy kamer (vč. Continuity iPhonu)
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                // Hned ho zastavíme, chceme jen oprávnění pro názvy
-                stream.getTracks().forEach(track => track.stop());
+                // Vyžádáme si přístup pouze k videu k probuzení Continuity
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const videoDevices = devices.filter(d => d.kind === 'videoinput');
-                populateCameraSelect(videoDevices);
+                // Počkáme 3 sekundy, aby měl macOS čas zaregistrovat iPhone jako kameru
+                setTimeout(async () => {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                    populateCameraSelect(videoDevices);
+                    
+                    // Nyní můžeme stream ukončit
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    btnRefreshCameras.style.color = 'var(--success)';
+                    setTimeout(() => btnRefreshCameras.style.color = '', 2000);
+                }, 3000);
                 
-                btnRefreshCameras.style.color = 'var(--success)';
-                setTimeout(() => btnRefreshCameras.style.color = '', 2000);
             } catch (err) {
                 console.error('Chyba přístupu ke kamerám:', err);
                 alert('Musíte povolit přístup ke kameře v prohlížeči, jinak neuvidíte názvy (ani iPhone).');
