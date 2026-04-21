@@ -56,8 +56,9 @@ function populateCameraSelect(videoDevices) {
 }
 
 function setupRecorderListeners() {
-    // Automatická aktualizace seznamu kamer při připojení iPhonu
+    // Automatická aktualizace seznamu kamer
     navigator.mediaDevices.addEventListener('devicechange', async () => {
+        console.log('Změna zařízení detekována...');
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(d => d.kind === 'videoinput');
         populateCameraSelect(videoDevices);
@@ -66,26 +67,38 @@ function setupRecorderListeners() {
     const btnRefreshCameras = document.getElementById('btn-refresh-cameras');
     if (btnRefreshCameras) {
         btnRefreshCameras.addEventListener('click', async () => {
+            const originalHTML = btnRefreshCameras.innerHTML;
             try {
-                // Vyžádáme si přístup pouze k videu k probuzení Continuity
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                btnRefreshCameras.innerHTML = '<i class="ph ph-spinner ph-spin"></i>';
+                btnRefreshCameras.disabled = true;
                 
-                // Počkáme 3 sekundy, aby měl macOS čas zaregistrovat iPhone jako kameru
+                // Vyžádáme si přístup k videu i audiu k probuzení Continuity systému
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                
+                // Počkáme 5 sekund, aby měl macOS dostatek času iPhone "připojit" jako video zařízení
                 setTimeout(async () => {
                     const devices = await navigator.mediaDevices.enumerateDevices();
                     const videoDevices = devices.filter(d => d.kind === 'videoinput');
                     populateCameraSelect(videoDevices);
                     
-                    // Nyní můžeme stream ukončit
+                    // Zastavíme stream, aby nezůstala svítit kontrolka
                     stream.getTracks().forEach(track => track.stop());
                     
+                    btnRefreshCameras.innerHTML = originalHTML;
+                    btnRefreshCameras.disabled = false;
                     btnRefreshCameras.style.color = 'var(--success)';
                     setTimeout(() => btnRefreshCameras.style.color = '', 2000);
-                }, 3000);
+                    
+                    if (videoDevices.length <= 1) {
+                        alert('Nalezena pouze jedna kamera. Pokud nevidíte iPhone, zkuste ho připojit kabelem nebo zkontrolovat, zda je zamknutý a v blízkosti Macu.');
+                    }
+                }, 5000);
                 
             } catch (err) {
                 console.error('Chyba přístupu ke kamerám:', err);
-                alert('Musíte povolit přístup ke kameře v prohlížeči, jinak neuvidíte názvy (ani iPhone).');
+                btnRefreshCameras.innerHTML = originalHTML;
+                btnRefreshCameras.disabled = false;
+                alert('Chyba: ' + err.name + '. Povolte prosím kameru v nastavení prohlížeče (ikona zámku v adresním řádku).');
             }
         });
     }
