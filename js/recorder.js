@@ -7,7 +7,8 @@ const recState = {
     recordingStartTime: null,
     timerInterval: null,
     writableStream: null,
-    chunksFallback: []
+    chunksFallback: [],
+    fileHandle: null
 };
 
 // DOM Elements
@@ -57,12 +58,14 @@ function populateCameraSelect(videoDevices) {
 
 function setupRecorderListeners() {
     // Automatická aktualizace seznamu kamer
-    navigator.mediaDevices.addEventListener('devicechange', async () => {
-        console.log('Změna zařízení detekována...');
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(d => d.kind === 'videoinput');
-        populateCameraSelect(videoDevices);
-    });
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+        navigator.mediaDevices.addEventListener('devicechange', async () => {
+            console.log('Změna zařízení detekována...');
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(d => d.kind === 'videoinput');
+            populateCameraSelect(videoDevices);
+        });
+    }
 
     const btnRefreshCameras = document.getElementById('btn-refresh-cameras');
     if (btnRefreshCameras) {
@@ -118,11 +121,6 @@ async function startCameraPreview(deviceId) {
         recState.stream.getTracks().forEach(track => track.stop());
     }
 
-async function startCameraPreview(deviceId) {
-    if (recState.stream) {
-        recState.stream.getTracks().forEach(track => track.stop());
-    }
-
     try {
         if (deviceId === 'screen') {
             recState.stream = await navigator.mediaDevices.getDisplayMedia({
@@ -151,7 +149,7 @@ async function startCameraPreview(deviceId) {
             cameraPreview.srcObject = recState.stream;
             cameraPreview.classList.remove('hidden');
             cameraPreview.style.display = 'block';
-            cameraPreview.muted = true; // Preview must be muted to prevent feedback loop
+            cameraPreview.muted = true;
             cameraPreview.play().catch(e => console.log('Autoplay blocked:', e));
             
             if (mainPlayer) mainPlayer.style.display = 'none';
