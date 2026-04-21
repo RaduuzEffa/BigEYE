@@ -1,0 +1,17 @@
+{
+    "name": "Big EYE - Video Analysis",
+    "short_name": "Big EYE",
+    "description": "Profesionální nástroj pro analýzu sportovních videí a taktiky",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#0d0e12",
+    "theme_color": "#E55C3E",
+    "icons": [
+        {
+            "src": "BigEYE.png",
+            "sizes": "192x192 512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}
