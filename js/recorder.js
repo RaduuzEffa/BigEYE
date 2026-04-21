@@ -56,6 +56,28 @@ function populateCameraSelect(videoDevices) {
 }
 
 function setupRecorderListeners() {
+    const btnRefreshCameras = document.getElementById('btn-refresh-cameras');
+    if (btnRefreshCameras) {
+        btnRefreshCameras.addEventListener('click', async () => {
+            try {
+                // Vyžádání oprávnění, aby prohlížeč odemkl skutečné názvy kamer (vč. Continuity iPhonu)
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                // Hned ho zastavíme, chceme jen oprávnění pro názvy
+                stream.getTracks().forEach(track => track.stop());
+                
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                populateCameraSelect(videoDevices);
+                
+                btnRefreshCameras.style.color = 'var(--success)';
+                setTimeout(() => btnRefreshCameras.style.color = '', 2000);
+            } catch (err) {
+                console.error('Chyba přístupu ke kamerám:', err);
+                alert('Musíte povolit přístup ke kameře v prohlížeči, jinak neuvidíte názvy (ani iPhone).');
+            }
+        });
+    }
+
     cameraSelect.addEventListener('change', (e) => {
         if (e.target.value) {
             startCameraPreview(e.target.value);

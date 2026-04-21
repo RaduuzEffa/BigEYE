@@ -30,9 +30,12 @@
             <div class="camera-section" style="padding: 15px; border-bottom: 1px solid var(--border-color);">
                 <div class="camera-controls">
                     <label for="camera-select" class="control-label" style="margin-bottom: 5px; display: block;">Zdroj videa:</label>
-                    <select id="camera-select" class="camera-select" style="width: 100%; margin-bottom: 10px;">
-                        <option value="">Hledám kamery...</option>
-                    </select>
+                    <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+                        <select id="camera-select" class="camera-select" style="flex: 1;">
+                            <option value="">Hledám kamery...</option>
+                        </select>
+                        <button id="btn-refresh-cameras" class="btn outline-btn" title="Povolit a načíst připojené kamery (vč. iPhonu/iPadu)" style="padding: 0 10px;"><i class="ph ph-arrows-clockwise"></i></button>
+                    </div>
                     
                     <div class="recording-settings hidden" style="margin-bottom: 15px; display: none;">
                         <label for="chunk-length" class="control-label" style="margin-bottom: 5px; display: block;">Délka segmentu (min):</label>
