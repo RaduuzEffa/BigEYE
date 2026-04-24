@@ -268,10 +268,20 @@ async function startRecordingSequence() {
     // Prefer using the directory handle selected in the sidebar
     if (window.state && window.state.dirHandle) {
         try {
+            // Explicitně znovu ověřit a vyžádat readwrite práva před zápisem (nutné pro Safari a MacOS složky)
+            const opts = { mode: 'readwrite' };
+            if ((await window.state.dirHandle.queryPermission(opts)) !== 'granted') {
+                const permission = await window.state.dirHandle.requestPermission(opts);
+                if (permission !== 'granted') {
+                    throw new Error('Byl zamítnut přístup k zápisu do vybrané složky.');
+                }
+            }
+            
             recState.fileHandle = await window.state.dirHandle.getFileHandle(suggestedName, { create: true });
             recState.writableStream = await recState.fileHandle.createWritable();
         } catch (err) {
             console.error('Automatický zápis do složky selhal:', err);
+            alert('Aplikace nezískala povolení zapisovat do této složky. Video bude nahráno do paměti a po skončení automaticky uloženo do běžných Stažených souborů.');
         }
     }
 

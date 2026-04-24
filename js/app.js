@@ -50,7 +50,35 @@ document.addEventListener('DOMContentLoaded', () => {
     // Sync drawing tools for fullscreen
     document.addEventListener('fullscreenchange', syncToolsUI);
     document.addEventListener('webkitfullscreenchange', syncToolsUI);
+    
+    // Setup Mute Toggle
+    setupMuteToggle();
 });
+
+function setupMuteToggle() {
+    const btnToggleMute = document.getElementById('btn-toggle-mute');
+    const muteIcon = document.getElementById('mute-icon');
+    let isGloballyMuted = true; // Default state because camera preview starts muted
+    
+    if (btnToggleMute) {
+        btnToggleMute.addEventListener('click', () => {
+            isGloballyMuted = !isGloballyMuted;
+            
+            if (isGloballyMuted) {
+                muteIcon.className = 'ph ph-speaker-slash';
+                btnToggleMute.style.color = 'white';
+            } else {
+                muteIcon.className = 'ph ph-speaker-high';
+                btnToggleMute.style.color = '#10b981'; // Zelená pro aktivní zvuk
+            }
+            
+            const cameraPreview = document.getElementById('camera-preview');
+            const mainPlayer = document.getElementById('main-player');
+            if (cameraPreview) cameraPreview.muted = isGloballyMuted;
+            if (mainPlayer) mainPlayer.muted = isGloballyMuted;
+        });
+    }
+}
 
 function syncToolsUI() {
     const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
@@ -171,11 +199,17 @@ async function scanDirectory(dirHandle, filesArray, path = '') {
 let fileTreeData = {};
 
 function processFiles(fileListItems) {
-    if (!fileListItems || fileListItems.length === 0) return;
+    fileTreeData = {}; // ALWAYS clear the tree data first
+    fileTree.innerHTML = '';
     
     // Hide empty state if it exists
     const emptyState = document.getElementById('empty-tree-state');
     if (emptyState) emptyState.style.display = 'none';
+    
+    if (!fileListItems || fileListItems.length === 0) {
+        fileTree.innerHTML = '<div style="padding: 15px; text-align: center; color: var(--text-secondary);">Složka neobsahuje žádná podporovaná videa. Právě nahraná videa se zde objeví.</div>';
+        return;
+    }
     
     Array.from(fileListItems).forEach(file => {
         if (!file.type.startsWith('video/') && !file.name.endsWith('.webm') && !file.name.endsWith('.mp4')) return;
