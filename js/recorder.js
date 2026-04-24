@@ -123,8 +123,17 @@ function setupRecorderListeners() {
                 btnRefreshCameras.innerHTML = '<i class="ph ph-spinner ph-spin"></i>';
                 btnRefreshCameras.disabled = true;
                 
-                // Vyžádáme si přístup k videu i audiu k probuzení Continuity systému
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                } catch (err) {
+                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                        // Fallback pro probuzení bez audia
+                        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    } else {
+                        throw err;
+                    }
+                }
                 
                 // Počkáme 5 sekund, aby měl macOS dostatek času iPhone "připojit" jako video zařízení
                 setTimeout(async () => {
@@ -213,7 +222,19 @@ async function startCameraPreview(deviceId) {
                     height: { ideal: 1080 }
                 };
             }
-            recState.stream = await navigator.mediaDevices.getUserMedia(constraints);
+            try {
+                recState.stream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (err) {
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    console.warn('Audio permission denied, falling back to video only');
+                    constraints.audio = false;
+                    recState.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    // Zobrazit jemné upozornění, že natáčení bude bez zvuku
+                    alert('Varování: Přístup k mikrofonu je v prohlížeči zakázán. Záznam bude probíhat bez zvuku! (Pro zvuk povolte mikrofon kliknutím na ikonku vlevo od webové adresy nahoře).');
+                } else {
+                    throw err;
+                }
+            }
             
             // Auto-refresh the select list so real camera names populate once permissions are given
             navigator.mediaDevices.enumerateDevices().then(devices => {
