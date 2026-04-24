@@ -172,10 +172,10 @@ async function openFolderPicker() {
             if (btn) btn.innerHTML = '<i class="ph ph-arrows-clockwise"></i>';
         } catch (e) {
             console.log('Folder picker canceled or failed:', e);
-            alert('Výběr složky byl zrušen nebo prohlížeč neumožnil přístup.');
+            document.getElementById('folder-input').click();
         }
     } else {
-        alert('Váš prohlížeč nepodporuje výběr složek.');
+        document.getElementById('folder-input').click();
     }
 }
 
@@ -206,23 +206,45 @@ function processFiles(fileListItems) {
     const emptyState = document.getElementById('empty-tree-state');
     if (emptyState) emptyState.style.display = 'none';
     
-    // Vždy zobrazíme hlavní kořenovou složku, aby uživatel věděl, že se něco děje, i když je prázdná!
-    const treeContainer = document.createElement('div');
+    // Vždy zobrazíme hlavní kořenovou složku, aby uživatel věděl, že se něco děje
+    const rootFolder = document.createElement('div');
+    rootFolder.className = 'tree-item folder-item';
+    
+    let folderName = 'Vybraná složka';
     if (state.dirHandle) {
-        const rootFolder = document.createElement('div');
-        rootFolder.className = 'tree-item folder-item';
-        rootFolder.innerHTML = `<i class="ph ph-folder-open"></i> <span style="font-weight:bold; color:var(--success);">${state.dirHandle.name}</span>`;
-        fileTree.appendChild(rootFolder);
+        folderName = state.dirHandle.name;
+    } else if (fileListItems && fileListItems.length > 0 && fileListItems[0].webkitRelativePath) {
+        folderName = fileListItems[0].webkitRelativePath.split('/')[0];
     }
+    
+    rootFolder.innerHTML = `<i class="ph ph-folder-open"></i> <span style="font-weight:bold; color:var(--success);">${folderName}</span>`;
+    fileTree.appendChild(rootFolder);
     
     if (!fileListItems || fileListItems.length === 0) {
         const msg = document.createElement('div');
         msg.style.padding = '10px 15px';
         msg.style.color = 'var(--text-secondary)';
         msg.style.fontSize = '0.85rem';
-        msg.textContent = 'Složka zatím neobsahuje videa.';
+        msg.textContent = 'Složka neobsahuje žádná videa. Pokud nahráváte z prázdné složky, videa se zde začnou postupně objevovat (pomocí tlačítka pro aktualizaci nebo drag&drop).';
         fileTree.appendChild(msg);
+        
+        const btnOpenFolder = document.getElementById('btn-open-folder');
+        if (btnOpenFolder && folderName === 'Vybraná složka') {
+            btnOpenFolder.innerHTML = `<i class="ph ph-folder-open"></i> Prázdná složka načtena`;
+            btnOpenFolder.style.color = 'var(--success)';
+            btnOpenFolder.style.borderColor = 'var(--success)';
+        }
         return;
+    }
+    
+    // Pokud použijeme fallback, aspoň nastavíme tlačítko
+    if (!state.dirHandle) {
+        const btnOpenFolder = document.getElementById('btn-open-folder');
+        if (btnOpenFolder) {
+            btnOpenFolder.innerHTML = `<i class="ph ph-folder-open"></i> ${folderName}`;
+            btnOpenFolder.style.color = 'var(--success)';
+            btnOpenFolder.style.borderColor = 'var(--success)';
+        }
     }
     
     Array.from(fileListItems).forEach(file => {

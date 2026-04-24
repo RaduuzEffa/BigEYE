@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bigeye-cache-v10';
+const CACHE_NAME = 'bigeye-cache-v11';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
