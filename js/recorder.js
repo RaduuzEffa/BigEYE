@@ -275,8 +275,7 @@ async function startRecordingSequence() {
     }
 
     if (!recState.writableStream) {
-        alert('Nahrávání nelze spustit bez přístupu k disku (povolte přístup ke složce nebo vyberte soubor).');
-        return;
+        console.log('Zápis na disk není podporován nebo povolen. Bude použito nahrávání do paměti (fallback).');
     }
 
     btnStartRecord.style.display = 'none';
@@ -303,11 +302,15 @@ async function startRecordingSequence() {
     });
 
     recorder.ondataavailable = async (e) => {
-        if (e.data.size > 0 && recState.writableStream) {
-            try {
-                await recState.writableStream.write(e.data);
-            } catch (err) {
-                console.error('Chyba při zápisu:', err);
+        if (e.data.size > 0) {
+            if (recState.writableStream) {
+                try {
+                    await recState.writableStream.write(e.data);
+                } catch (err) {
+                    console.error('Chyba při zápisu:', err);
+                }
+            } else {
+                recState.chunksFallback.push(e.data);
             }
         }
     };
@@ -322,6 +325,27 @@ async function startRecordingSequence() {
                 window.addToQueue(file);
                 console.log('Video přidáno do fronty.');
             }
+        } else if (recState.chunksFallback.length > 0) {
+            const blob = new Blob(recState.chunksFallback, { type: mimeType });
+            const file = new File([blob], suggestedName, { type: mimeType });
+            
+            // AUTOMATICALLY ADD TO QUEUE (Fallback z paměti)
+            if (window.addToQueue) {
+                window.addToQueue(file);
+                console.log('Video z paměti přidáno do fronty.');
+            }
+            
+            // Vyvolání klasického stažení do složky "Stahování" na iOS/iPadOS Safari
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = URL.createObjectURL(blob);
+            a.download = suggestedName;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+            }, 100);
         }
         recState.isRecording = false;
         stopTimer();

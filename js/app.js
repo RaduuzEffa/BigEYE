@@ -670,4 +670,7 @@ function resizeCanvas() {
     drawingCanvas.height = mainPlayer.clientHeight;
 }
 
+window.state = state;
+window.addToQueue = addToQueue;
+
 })();
