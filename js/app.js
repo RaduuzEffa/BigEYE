@@ -150,7 +150,8 @@ function setupSidebar() {
 async function openFolderPicker() {
     if ('showDirectoryPicker' in window) {
         try {
-            const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            // Safari nesnese mode: 'readwrite' hned při prvním dotazu, vyvolalo by to chybu!
+            const dirHandle = await window.showDirectoryPicker();
             state.dirHandle = dirHandle;
             document.getElementById('btn-refresh-folder').style.display = 'flex';
             
@@ -171,10 +172,10 @@ async function openFolderPicker() {
             if (btn) btn.innerHTML = '<i class="ph ph-arrows-clockwise"></i>';
         } catch (e) {
             console.log('Folder picker canceled or failed:', e);
-            folderInput.click();
+            alert('Výběr složky byl zrušen nebo prohlížeč neumožnil přístup.');
         }
     } else {
-        folderInput.click();
+        alert('Váš prohlížeč nepodporuje výběr složek.');
     }
 }
 
@@ -199,15 +200,28 @@ async function scanDirectory(dirHandle, filesArray, path = '') {
 let fileTreeData = {};
 
 function processFiles(fileListItems) {
-    fileTreeData = {}; // ALWAYS clear the tree data first
+    fileTreeData = {}; 
     fileTree.innerHTML = '';
     
-    // Hide empty state if it exists
     const emptyState = document.getElementById('empty-tree-state');
     if (emptyState) emptyState.style.display = 'none';
     
+    // Vždy zobrazíme hlavní kořenovou složku, aby uživatel věděl, že se něco děje, i když je prázdná!
+    const treeContainer = document.createElement('div');
+    if (state.dirHandle) {
+        const rootFolder = document.createElement('div');
+        rootFolder.className = 'tree-item folder-item';
+        rootFolder.innerHTML = `<i class="ph ph-folder-open"></i> <span style="font-weight:bold; color:var(--success);">${state.dirHandle.name}</span>`;
+        fileTree.appendChild(rootFolder);
+    }
+    
     if (!fileListItems || fileListItems.length === 0) {
-        fileTree.innerHTML = '<div style="padding: 15px; text-align: center; color: var(--text-secondary);">Složka neobsahuje žádná podporovaná videa. Právě nahraná videa se zde objeví.</div>';
+        const msg = document.createElement('div');
+        msg.style.padding = '10px 15px';
+        msg.style.color = 'var(--text-secondary)';
+        msg.style.fontSize = '0.85rem';
+        msg.textContent = 'Složka zatím neobsahuje videa.';
+        fileTree.appendChild(msg);
         return;
     }
     
@@ -242,28 +256,23 @@ function renderTree(node, container) {
             el.style.justifyContent = 'space-between';
             
             const labelSpan = document.createElement('span');
-            labelSpan.innerHTML = `<i class="ph ph-file-video"></i> <span>${key}</span>`;
+            labelSpan.innerHTML = `<i class="ph ph-file-video"></i> <span class="editable-name">${key}</span>`;
             labelSpan.style.flex = '1';
             labelSpan.style.overflow = 'hidden';
             labelSpan.style.textOverflow = 'ellipsis';
-            labelSpan.addEventListener('dblclick', () => addToQueue(state.files.get(node[key])));
+            labelSpan.style.cursor = 'pointer';
             
-            const renameBtn = document.createElement('button');
-            renameBtn.className = 'btn outline-btn';
-            renameBtn.innerHTML = '<i class="ph ph-pencil-simple"></i>';
-            renameBtn.style.padding = '2px 4px';
-            renameBtn.style.fontSize = '0.7rem';
-            renameBtn.style.border = 'none';
-            renameBtn.style.background = 'transparent';
-            renameBtn.title = 'Přejmenovat';
-            renameBtn.addEventListener('click', (e) => {
+            // Kliknutí pro přehrání
+            labelSpan.addEventListener('click', () => addToQueue(state.files.get(node[key])));
+            
+            // Dvojklik pro přejmenování
+            const nameText = labelSpan.querySelector('.editable-name');
+            nameText.addEventListener('dblclick', (e) => {
                 e.stopPropagation();
-                window.promptRename(node[key]);
+                makeEditable(nameText, key);
             });
             
             el.appendChild(labelSpan);
-            el.appendChild(renameBtn);
-            
             el.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/plain', node[key]));
             container.appendChild(el);
         } else {
@@ -369,25 +378,17 @@ function renderQueue() {
             item.classList.add('active');
         }
         
-        // Vytvoření názvu
+        // Vytvoření názvu (s možností editace na dvojklik)
         const nameSpan = document.createElement('span');
         nameSpan.className = 'playlist-item-name';
         nameSpan.textContent = file.name;
         nameSpan.style.flex = '1';
-        nameSpan.addEventListener('click', () => loadVideo(file));
+        nameSpan.style.cursor = 'pointer';
         
-        // Tlačítko pro přejmenování
-        const renameBtn = document.createElement('button');
-        renameBtn.className = 'btn outline-btn';
-        renameBtn.innerHTML = '<i class="ph ph-pencil-simple"></i>';
-        renameBtn.style.padding = '4px 6px';
-        renameBtn.style.fontSize = '0.7rem';
-        renameBtn.style.border = 'none';
-        renameBtn.style.marginLeft = '8px';
-        renameBtn.title = 'Přejmenovat';
-        renameBtn.addEventListener('click', (e) => {
+        nameSpan.addEventListener('click', () => loadVideo(file));
+        nameSpan.addEventListener('dblclick', (e) => {
             e.stopPropagation();
-            window.promptRename(file.name);
+            makeEditable(nameSpan, file.name);
         });
         
         // Tlačítko pro smazání (X)
@@ -400,8 +401,10 @@ function renderQueue() {
         removeBtn.style.marginLeft = '4px';
         removeBtn.title = 'Odebrat ze seznamu';
         removeBtn.addEventListener('click', (e) => {
-            e.stopPropagation(); // Zabrání kliknutí na celou položku
-            state.activeQueue.splice(index, 1);
+            e.stopPropagation();
+            // ZDE JE OPRAVA INDEXU! (Použijeme filter místo splice přes index)
+            state.activeQueue = state.activeQueue.filter(f => f.name !== file.name);
+            
             if (state.currentVideo && state.currentVideo.name === file.name) {
                 state.currentVideo = null;
                 mainPlayer.src = '';
@@ -416,7 +419,6 @@ function renderQueue() {
         });
         
         item.appendChild(nameSpan);
-        item.appendChild(renameBtn);
         item.appendChild(removeBtn);
         
         // Allow dragging back to tree to remove
@@ -792,9 +794,54 @@ function resizeCanvas() {
     }
 }
 
+// Zajištění inline editace textu
+function makeEditable(span, oldName) {
+    span.contentEditable = true;
+    span.style.backgroundColor = 'rgba(59, 130, 246, 0.5)'; // Modré podbarvení
+    span.style.padding = '2px 4px';
+    span.style.borderRadius = '4px';
+    span.style.outline = 'none';
+    span.focus();
+    
+    // Vybere text (ideálně bez koncovky, ale Safari může zlobit, tak rovnou celý text)
+    const range = document.createRange();
+    range.selectNodeContents(span);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    
+    const stopEdit = () => {
+        span.contentEditable = false;
+        span.style.backgroundColor = 'transparent';
+        span.style.padding = '0';
+        span.removeEventListener('blur', stopEdit);
+        span.removeEventListener('keydown', keyHandler);
+        
+        const newText = span.textContent.trim();
+        if (newText && newText !== oldName) {
+            window.executeRename(oldName, newText);
+        } else {
+            span.textContent = oldName; // Vrátíme původní název
+        }
+    };
+    
+    const keyHandler = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            span.blur(); // Vyvolá stopEdit
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            span.textContent = oldName;
+            span.blur();
+        }
+    };
+    
+    span.addEventListener('blur', stopEdit);
+    span.addEventListener('keydown', keyHandler);
+}
+
 // Rename logic
-window.promptRename = async function(oldName) {
-    let newName = prompt('Zadejte nový název souboru:', oldName);
+window.executeRename = async function(oldName, newName) {
     if (!newName || newName === oldName) return;
     
     // Zajistíme příponu
@@ -805,6 +852,8 @@ window.promptRename = async function(oldName) {
 
     if (state.files.has(newName)) {
         alert('Soubor s tímto názvem již existuje!');
+        // Znovu vykreslíme frontu pro smazání změn v UI
+        renderQueue();
         return;
     }
 
@@ -813,10 +862,8 @@ window.promptRename = async function(oldName) {
     // Pokusíme se přejmenovat na disku, pokud máme dirHandle
     if (state.dirHandle) {
         try {
-            // Najít soubor na disku v aktuální složce (pokud je ve složce)
             const oldFileHandle = await state.dirHandle.getFileHandle(oldName);
             
-            // Check permission
             const opts = { mode: 'readwrite' };
             if ((await state.dirHandle.queryPermission(opts)) !== 'granted') {
                 await state.dirHandle.requestPermission(opts);
@@ -825,7 +872,6 @@ window.promptRename = async function(oldName) {
             if (typeof oldFileHandle.move === 'function') {
                 await oldFileHandle.move(newName);
             } else {
-                // Fallback copy (může být pomalé pro velmi velká videa)
                 const newFileHandle = await state.dirHandle.getFileHandle(newName, { create: true });
                 const writable = await newFileHandle.createWritable();
                 await writable.write(await oldFileHandle.getFile());
@@ -834,11 +880,10 @@ window.promptRename = async function(oldName) {
             }
         } catch (e) {
             console.error('Chyba při přejmenování na disku:', e);
-            // Je možné, že soubor byl přidán přes file input nebo D&D a není v dirHandle
         }
     }
 
-    // Aktualizace v paměti aplikace (File objekty jsou nezměnitelné, musíme vytvořit nový)
+    // Aktualizace v paměti aplikace
     const newFile = new File([oldFile], newName, { type: oldFile.type });
     if (oldFile.webkitRelativePath) {
         Object.defineProperty(newFile, 'webkitRelativePath', {
@@ -850,7 +895,6 @@ window.promptRename = async function(oldName) {
     state.files.delete(oldName);
     state.files.set(newName, newFile);
 
-    // Aktualizace fronty
     const queueIndex = state.activeQueue.findIndex(f => f.name === oldName);
     if (queueIndex !== -1) {
         state.activeQueue[queueIndex] = newFile;
