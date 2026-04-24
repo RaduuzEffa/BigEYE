@@ -237,9 +237,34 @@ function renderTree(node, container) {
             const el = document.createElement('div');
             el.className = 'tree-item video-item';
             el.draggable = true;
-            el.innerHTML = `<i class="ph ph-file-video"></i> <span>${key}</span>`;
+            el.style.display = 'flex';
+            el.style.alignItems = 'center';
+            el.style.justifyContent = 'space-between';
+            
+            const labelSpan = document.createElement('span');
+            labelSpan.innerHTML = `<i class="ph ph-file-video"></i> <span>${key}</span>`;
+            labelSpan.style.flex = '1';
+            labelSpan.style.overflow = 'hidden';
+            labelSpan.style.textOverflow = 'ellipsis';
+            labelSpan.addEventListener('dblclick', () => addToQueue(state.files.get(node[key])));
+            
+            const renameBtn = document.createElement('button');
+            renameBtn.className = 'btn outline-btn';
+            renameBtn.innerHTML = '<i class="ph ph-pencil-simple"></i>';
+            renameBtn.style.padding = '2px 4px';
+            renameBtn.style.fontSize = '0.7rem';
+            renameBtn.style.border = 'none';
+            renameBtn.style.background = 'transparent';
+            renameBtn.title = 'Přejmenovat';
+            renameBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                window.promptRename(node[key]);
+            });
+            
+            el.appendChild(labelSpan);
+            el.appendChild(renameBtn);
+            
             el.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/plain', node[key]));
-            el.addEventListener('dblclick', () => addToQueue(state.files.get(node[key])));
             container.appendChild(el);
         } else {
             // Folder
@@ -351,6 +376,20 @@ function renderQueue() {
         nameSpan.style.flex = '1';
         nameSpan.addEventListener('click', () => loadVideo(file));
         
+        // Tlačítko pro přejmenování
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'btn outline-btn';
+        renameBtn.innerHTML = '<i class="ph ph-pencil-simple"></i>';
+        renameBtn.style.padding = '4px 6px';
+        renameBtn.style.fontSize = '0.7rem';
+        renameBtn.style.border = 'none';
+        renameBtn.style.marginLeft = '8px';
+        renameBtn.title = 'Přejmenovat';
+        renameBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.promptRename(file.name);
+        });
+        
         // Tlačítko pro smazání (X)
         const removeBtn = document.createElement('button');
         removeBtn.className = 'btn outline-btn';
@@ -358,7 +397,7 @@ function renderQueue() {
         removeBtn.style.padding = '4px 6px';
         removeBtn.style.fontSize = '0.7rem';
         removeBtn.style.border = 'none';
-        removeBtn.style.marginLeft = '8px';
+        removeBtn.style.marginLeft = '4px';
         removeBtn.title = 'Odebrat ze seznamu';
         removeBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // Zabrání kliknutí na celou položku
@@ -377,6 +416,7 @@ function renderQueue() {
         });
         
         item.appendChild(nameSpan);
+        item.appendChild(renameBtn);
         item.appendChild(removeBtn);
         
         // Allow dragging back to tree to remove
@@ -751,6 +791,79 @@ function resizeCanvas() {
         drawingCanvas.height = playerContainer.clientHeight;
     }
 }
+
+// Rename logic
+window.promptRename = async function(oldName) {
+    let newName = prompt('Zadejte nový název souboru:', oldName);
+    if (!newName || newName === oldName) return;
+    
+    // Zajistíme příponu
+    const oldExt = oldName.substring(oldName.lastIndexOf('.'));
+    if (!newName.endsWith(oldExt)) {
+        newName += oldExt;
+    }
+
+    if (state.files.has(newName)) {
+        alert('Soubor s tímto názvem již existuje!');
+        return;
+    }
+
+    const oldFile = state.files.get(oldName);
+
+    // Pokusíme se přejmenovat na disku, pokud máme dirHandle
+    if (state.dirHandle) {
+        try {
+            // Najít soubor na disku v aktuální složce (pokud je ve složce)
+            const oldFileHandle = await state.dirHandle.getFileHandle(oldName);
+            
+            // Check permission
+            const opts = { mode: 'readwrite' };
+            if ((await state.dirHandle.queryPermission(opts)) !== 'granted') {
+                await state.dirHandle.requestPermission(opts);
+            }
+
+            if (typeof oldFileHandle.move === 'function') {
+                await oldFileHandle.move(newName);
+            } else {
+                // Fallback copy (může být pomalé pro velmi velká videa)
+                const newFileHandle = await state.dirHandle.getFileHandle(newName, { create: true });
+                const writable = await newFileHandle.createWritable();
+                await writable.write(await oldFileHandle.getFile());
+                await writable.close();
+                await state.dirHandle.removeEntry(oldName);
+            }
+        } catch (e) {
+            console.error('Chyba při přejmenování na disku:', e);
+            // Je možné, že soubor byl přidán přes file input nebo D&D a není v dirHandle
+        }
+    }
+
+    // Aktualizace v paměti aplikace (File objekty jsou nezměnitelné, musíme vytvořit nový)
+    const newFile = new File([oldFile], newName, { type: oldFile.type });
+    if (oldFile.webkitRelativePath) {
+        Object.defineProperty(newFile, 'webkitRelativePath', {
+            value: oldFile.webkitRelativePath.replace(oldName, newName),
+            writable: false
+        });
+    }
+
+    state.files.delete(oldName);
+    state.files.set(newName, newFile);
+
+    // Aktualizace fronty
+    const queueIndex = state.activeQueue.findIndex(f => f.name === oldName);
+    if (queueIndex !== -1) {
+        state.activeQueue[queueIndex] = newFile;
+    }
+
+    if (state.currentVideo && state.currentVideo.name === oldName) {
+        state.currentVideo = newFile;
+    }
+
+    // Znovu načíst strom okamžitě z paměti
+    processFiles(Array.from(state.files.values()));
+    renderQueue();
+};
 
 window.state = state;
 window.addToQueue = addToQueue;
