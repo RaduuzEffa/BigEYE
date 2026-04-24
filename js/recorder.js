@@ -228,9 +228,16 @@ async function startCameraPreview(deviceId) {
                 if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
                     console.warn('Audio permission denied, falling back to video only');
                     constraints.audio = false;
-                    recState.stream = await navigator.mediaDevices.getUserMedia(constraints);
-                    // Zobrazit jemné upozornění, že natáčení bude bez zvuku
-                    alert('Varování: Přístup k mikrofonu je v prohlížeči zakázán. Záznam bude probíhat bez zvuku! (Pro zvuk povolte mikrofon kliknutím na ikonku vlevo od webové adresy nahoře).');
+                    try {
+                        recState.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                        alert('Varování: Přístup k mikrofonu je zakázán. Záznam poběží bez zvuku!');
+                    } catch (videoErr) {
+                        if (videoErr.name === 'NotAllowedError' || videoErr.name === 'PermissionDeniedError') {
+                            throw new Error('Přístup ke kameře i mikrofonu je v prohlížeči trvale zablokován. Musíte nahoře v adresním řádku (ikona nastavení/zámku) ručně Povolit kameru i mikrofon a stránku obnovit.');
+                        } else {
+                            throw videoErr;
+                        }
+                    }
                 } else {
                     throw err;
                 }
@@ -260,7 +267,12 @@ async function startCameraPreview(deviceId) {
         }
     } catch (err) {
         console.error('Chyba při spouštění náhledu:', err);
-        alert('Nepodařilo se spustit zdroj. Zkuste to znovu nebo připojte iPhone kabelem.');
+        const errMsg = err.message || err.name;
+        if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+            alert('Nepodařilo se spustit zdroj, pravděpodobně je kamera používána jinou aplikací, nebo iPhone ztratil spojení. Zkuste to znovu.');
+        } else {
+            alert(`Nepodařilo se spustit zdroj: ${errMsg}`);
+        }
         cameraSelect.value = '';
     }
 }
