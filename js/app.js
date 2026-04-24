@@ -179,6 +179,8 @@ async function openFolderPicker() {
     }
 }
 
+window.processFiles = processFiles; // Export pro použití v recorder.js
+
 async function scanDirectory(dirHandle, filesArray, path = '') {
     for await (const entry of dirHandle.values()) {
         if (entry.kind === 'file') {

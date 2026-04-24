@@ -380,11 +380,19 @@ async function startRecordingSequence() {
         if (recState.writableStream) {
             await recState.writableStream.close();
             
-            // AUTOMATICALLY ADD TO QUEUE
+            // AUTOMATICALLY ADD TO QUEUE AND TREE
             if (recState.fileHandle && window.addToQueue) {
                 const file = await recState.fileHandle.getFile();
                 window.addToQueue(file);
                 console.log('Video přidáno do fronty.');
+                
+                // Automatická aktualizace stromečku, aby se video hned ukázalo v levém panelu
+                if (window.state && window.state.dirHandle) {
+                    const btnRefreshFolder = document.getElementById('btn-refresh-folder');
+                    if (btnRefreshFolder) {
+                        btnRefreshFolder.click();
+                    }
+                }
             }
         } else if (recState.chunksFallback.length > 0) {
             const blob = new Blob(recState.chunksFallback, { type: mimeType });
@@ -394,6 +402,14 @@ async function startRecordingSequence() {
             if (window.addToQueue) {
                 window.addToQueue(file);
                 console.log('Video z paměti přidáno do fronty.');
+                
+                // Přidáme i do stromečku ručně (nemáme dirHandle pro automatický refresh)
+                if (window.state && window.state.files) {
+                    window.state.files.set(suggestedName, file);
+                    if (typeof window.processFiles === 'function') {
+                        window.processFiles(Array.from(window.state.files.values()));
+                    }
+                }
             }
             
             // Vyvolání klasického stažení do složky "Stahování" na iOS/iPadOS Safari
