@@ -83,24 +83,22 @@ function setupSidebar() {
     folderInput.addEventListener('change', (e) => processFiles(e.target.files));
     fileInput.addEventListener('change', (e) => processFiles(e.target.files));
     
-    const explorerSection = document.querySelector('.explorer-section');
-    if (explorerSection) {
-        const refreshBtn = document.createElement('button');
-        refreshBtn.className = 'btn outline-btn';
-        refreshBtn.id = 'btn-refresh-folder';
-        refreshBtn.innerHTML = '<i class="ph ph-arrows-clockwise"></i> Aktualizovat složku';
-        refreshBtn.style.margin = '10px 15px 0 15px';
-        refreshBtn.style.display = 'none'; // Skryté, dokud není zvolena složka
-        refreshBtn.addEventListener('click', async () => {
+    const btnOpenFolder = document.getElementById('btn-open-folder');
+    if (btnOpenFolder) {
+        btnOpenFolder.addEventListener('click', openFolderPicker);
+    }
+    
+    const btnRefreshFolder = document.getElementById('btn-refresh-folder');
+    if (btnRefreshFolder) {
+        btnRefreshFolder.addEventListener('click', async () => {
             if (state.dirHandle) {
-                refreshBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> Načítám...';
+                btnRefreshFolder.innerHTML = '<i class="ph ph-spinner ph-spin"></i>';
                 const files = [];
                 await scanDirectory(state.dirHandle, files, state.dirHandle.name + '/');
                 processFiles(files);
-                refreshBtn.innerHTML = '<i class="ph ph-arrows-clockwise"></i> Aktualizovat složku';
+                btnRefreshFolder.innerHTML = '<i class="ph ph-arrows-clockwise"></i>';
             }
         });
-        explorerSection.insertBefore(refreshBtn, document.getElementById('file-tree'));
     }
     
     // Drag and drop to remove from playlist
@@ -124,18 +122,25 @@ function setupSidebar() {
 async function openFolderPicker() {
     if ('showDirectoryPicker' in window) {
         try {
-            const dirHandle = await window.showDirectoryPicker();
+            const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
             state.dirHandle = dirHandle;
             document.getElementById('btn-refresh-folder').style.display = 'flex';
             
+            const btnOpenFolder = document.getElementById('btn-open-folder');
+            if (btnOpenFolder) {
+                btnOpenFolder.innerHTML = `<i class="ph ph-folder-open"></i> ${dirHandle.name}`;
+                btnOpenFolder.style.color = 'var(--success)';
+                btnOpenFolder.style.borderColor = 'var(--success)';
+            }
+            
             const btn = document.getElementById('btn-refresh-folder');
-            if (btn) btn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> Načítám...';
+            if (btn) btn.innerHTML = '<i class="ph ph-spinner ph-spin"></i>';
             
             const files = [];
             await scanDirectory(dirHandle, files, dirHandle.name + '/');
             processFiles(files);
             
-            if (btn) btn.innerHTML = '<i class="ph ph-arrows-clockwise"></i> Aktualizovat složku';
+            if (btn) btn.innerHTML = '<i class="ph ph-arrows-clockwise"></i>';
         } catch (e) {
             console.log('Folder picker canceled or failed:', e);
             folderInput.click();
@@ -252,11 +257,22 @@ function setupDropZone() {
         e.preventDefault();
         dropZone.classList.remove('dragover');
         
-        // Zpracování ze stromečku (Levý sidebar) - string název souboru
+        // Zpracování ze stromečku (Levý sidebar)
         const fileName = e.dataTransfer.getData('text/plain');
         if (fileName && state.files.has(fileName)) {
-            addToQueue(state.files.get(fileName));
+            const file = state.files.get(fileName);
+            loadVideo(file);
+            addToQueue(file);
         } 
+        
+        // Zpracování z fronty (aby se pustilo a nezmizelo)
+        const removeName = e.dataTransfer.getData('text/remove-playlist');
+        if (removeName) {
+            const fileToPlay = state.activeQueue.find(f => f.name === removeName);
+            if (fileToPlay) {
+                loadVideo(fileToPlay);
+            }
+        }
         
         // Zpracování souborů přímo z počítače (Mac Finder)
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -265,6 +281,9 @@ function setupDropZone() {
                 if (file.type.startsWith('video/') || file.name.endsWith('.webm') || file.name.endsWith('.mp4') || file.name.endsWith('.mov')) {
                     addToQueue(file);
                 }
+            }
+            if (e.dataTransfer.files.length === 1) {
+                loadVideo(e.dataTransfer.files[0]);
             }
         }
     });
@@ -340,8 +359,23 @@ function loadVideo(file) {
     dropZone.style.display = 'none';
     playerContainer.classList.remove('hidden');
     
+    // Hide camera preview if we are loading a video, but show Back to Live button if recording
+    const cameraPreview = document.getElementById('camera-preview');
+    const btnBackToLive = document.getElementById('btn-back-to-live');
+    if (cameraPreview && !cameraPreview.classList.contains('hidden') && cameraPreview.srcObject) {
+        cameraPreview.style.display = 'none';
+        if (btnBackToLive) btnBackToLive.style.display = 'flex';
+    }
+    
     const url = URL.createObjectURL(file);
     mainPlayer.src = url;
+    mainPlayer.style.display = 'block';
+    
+    // Fix resize canvas when video metadata is loaded
+    mainPlayer.onloadedmetadata = () => {
+        resizeCanvas();
+    };
+    
     mainPlayer.play().catch(err => console.log(err));
     renderQueue();
 }
@@ -361,6 +395,11 @@ function startArrowAction(dir, e) {
     if (e && e.preventDefault) e.preventDefault();
     if (arrowState.direction === dir) return;
     if (arrowState.direction) stopArrowAction(arrowState.direction);
+    
+    // Zkontrolovat, zda chceme spustit DVR mód (prohlížení probíhajícího nahrávání)
+    if (window.triggerDVR && window.triggerDVR(dir)) {
+        // DVR mód se aktivoval (video je nastaveno v mainPlayer), teď ho můžeme posunout dál
+    }
     
     arrowState.direction = dir;
     arrowState.isHolding = false;
@@ -665,9 +704,18 @@ function getMousePos(e) {
 }
 
 function resizeCanvas() {
-    // Match native video resolution or player container size
-    drawingCanvas.width = mainPlayer.clientWidth;
-    drawingCanvas.height = mainPlayer.clientHeight;
+    // Match native video resolution or player container size based on which video is active
+    const cameraPreview = document.getElementById('camera-preview');
+    const isCameraActive = cameraPreview && cameraPreview.style.display !== 'none' && !cameraPreview.classList.contains('hidden');
+    const activeVideo = isCameraActive ? cameraPreview : mainPlayer;
+    
+    if (activeVideo && activeVideo.clientWidth > 0) {
+        drawingCanvas.width = activeVideo.clientWidth;
+        drawingCanvas.height = activeVideo.clientHeight;
+    } else if (playerContainer && playerContainer.clientWidth > 0) {
+        drawingCanvas.width = playerContainer.clientWidth;
+        drawingCanvas.height = playerContainer.clientHeight;
+    }
 }
 
 window.state = state;

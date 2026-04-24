@@ -8,6 +8,7 @@ const recState = {
     timerInterval: null,
     writableStream: null,
     chunksFallback: [],
+    liveChunks: [], // Používá se pro DVR (okamžité přehrávání záznamu)
     fileHandle: null,
     wakeLock: null
 };
@@ -31,6 +32,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const videoDevices = devices.filter(d => d.kind === 'videoinput');
             populateCameraSelect(videoDevices);
         }).catch(err => console.log(err));
+    }
+    
+    // Návrat z přehrávání záznamu zpět k živé kameře
+    const btnBackToLive = document.getElementById('btn-back-to-live');
+    if (btnBackToLive) {
+        btnBackToLive.addEventListener('click', () => {
+            if (recState.stream && cameraPreview) {
+                mainPlayer.pause();
+                mainPlayer.style.display = 'none';
+                cameraPreview.style.display = 'block';
+                cameraPreview.classList.remove('hidden');
+                btnBackToLive.style.display = 'none';
+                if (window.resizeCanvas) window.resizeCanvas();
+            }
+        });
     }
 });
 
@@ -219,6 +235,7 @@ async function startCameraPreview(deviceId) {
             if (document.getElementById('player-container')) {
                 document.getElementById('player-container').classList.remove('hidden');
             }
+            if (window.resizeCanvas) setTimeout(window.resizeCanvas, 100);
         }
     } catch (err) {
         console.error('Chyba při spouštění náhledu:', err);
@@ -234,6 +251,7 @@ async function startRecordingSequence() {
     }
 
     recState.chunksFallback = [];
+    recState.liveChunks = [];
     recState.writableStream = null;
     recState.fileHandle = null;
 
@@ -302,6 +320,7 @@ async function startRecordingSequence() {
 
     recorder.ondataavailable = async (e) => {
         if (e.data.size > 0) {
+            recState.liveChunks.push(e.data);
             if (recState.writableStream) {
                 try {
                     await recState.writableStream.write(e.data);
@@ -409,5 +428,36 @@ function updateTimerDisplay() {
     const s = (diff % 60).toString().padStart(2, '0');
     recTimeDisplay.textContent = `${m}:${s}`;
 }
+
+// DVR Logic (Krokování probíhajícího nahrávání)
+window.triggerDVR = function(dir) {
+    if (!recState.isRecording || recState.liveChunks.length === 0) return false;
+    
+    // Zkontrolujeme, zda se aktuálně díváme na živou kameru
+    const isViewingLive = cameraPreview && cameraPreview.style.display !== 'none' && !cameraPreview.classList.contains('hidden');
+    
+    if (isViewingLive) {
+        // Vytvořit Blob z dosud nahraného videa
+        const blob = new Blob(recState.liveChunks, { type: recState.mediaRecorder.mimeType });
+        const url = URL.createObjectURL(blob);
+        
+        mainPlayer.src = url;
+        cameraPreview.style.display = 'none';
+        mainPlayer.style.display = 'block';
+        
+        const dur = (Date.now() - recState.recordingStartTime) / 1000;
+        
+        // Nastavit čas na konec - abychom byli tam, kde jsme přestali sledovat živě
+        mainPlayer.currentTime = Math.max(0, dur - 1);
+        
+        const btnBackToLive = document.getElementById('btn-back-to-live');
+        if (btnBackToLive) btnBackToLive.style.display = 'flex';
+        
+        if (window.resizeCanvas) window.resizeCanvas();
+        return true;
+    }
+    
+    return false;
+};
 
 })();
