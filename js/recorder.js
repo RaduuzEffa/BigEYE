@@ -269,8 +269,7 @@ async function startRecordingSequence() {
             });
             recState.writableStream = await recState.fileHandle.createWritable();
         } catch (err) {
-            console.warn('Výběr souboru byl zrušen:', err);
-            return;
+            console.warn('Výběr souboru byl zrušen, přecházím na fallback do paměti:', err);
         }
     }
 

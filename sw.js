@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bigeye-cache-v5';
+const CACHE_NAME = 'bigeye-cache-v6';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -22,11 +22,26 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
+    // Přeskočit požadavky rozšíření apod.
+    if (!e.request.url.startsWith('http')) return;
+
     e.respondWith(
-        caches.match(e.request).then((response) => {
-            return response || fetch(e.request);
+        caches.match(e.request).then((cachedResponse) => {
+            if (cachedResponse) {
+                return cachedResponse;
+            }
+            return fetch(e.request).then((networkResponse) => {
+                // Dynamicky uložit do mezipaměti to, co ještě není (např. fonty, ikony z CDN)
+                if (networkResponse && networkResponse.status === 200 && (networkResponse.type === 'basic' || networkResponse.type === 'cors')) {
+                    const responseToCache = networkResponse.clone();
+                    caches.open(CACHE_NAME).then((cache) => {
+                        cache.put(e.request, responseToCache);
+                    });
+                }
+                return networkResponse;
+            });
         }).catch(() => {
-            // Fallback for offline if not in cache (e.g., returning index.html for navigation)
+            // Fallback pro navigaci
             if (e.request.mode === 'navigate') {
                 return caches.match('./index.html');
             }
