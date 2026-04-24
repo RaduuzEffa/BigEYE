@@ -8,7 +8,8 @@ const recState = {
     timerInterval: null,
     writableStream: null,
     chunksFallback: [],
-    fileHandle: null
+    fileHandle: null,
+    wakeLock: null
 };
 
 // DOM Elements
@@ -37,19 +38,50 @@ function populateCameraSelect(videoDevices) {
     const currentValue = cameraSelect.value;
     cameraSelect.innerHTML = '<option value="">Vyberte zdroj...</option>';
     
-    // Add Screen Share as the primary option
+    // 1. Sdílení obrazovky
     const screenOption = document.createElement('option');
     screenOption.value = 'screen';
-    screenOption.text = '💻 Sdílet obrazovku (vč. interního zvuku)';
+    screenOption.text = '💻 Nahrávání obrazovky (vč. zvuku)';
     cameraSelect.appendChild(screenOption);
 
-    // Add physical cameras
-    videoDevices.forEach(device => {
-        const option = document.createElement('option');
-        option.value = device.deviceId;
-        option.text = `📷 ${device.label || `Kamera ${cameraSelect.length}`}`;
-        cameraSelect.appendChild(option);
-    });
+    // 2. Fotoaparát zařízení (např. iPhone/iPad na kterém běží aplikace)
+    const envOption = document.createElement('option');
+    envOption.value = 'environment';
+    envOption.text = '📱 Fotoaparát (Zadní/Hlavní)';
+    cameraSelect.appendChild(envOption);
+
+    const userOption = document.createElement('option');
+    userOption.value = 'user';
+    userOption.text = '🤳 Fotoaparát (Přední)';
+    cameraSelect.appendChild(userOption);
+
+    // 3. Připojené externí a integrované kamery
+    if (videoDevices && videoDevices.length > 0) {
+        const separator = document.createElement('option');
+        separator.disabled = true;
+        separator.text = '--- Připojené kamery ---';
+        cameraSelect.appendChild(separator);
+
+        videoDevices.forEach((device, index) => {
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            
+            let label = device.label;
+            if (!label) {
+                label = `Neznámá kamera ${index + 1} (Nutno povolit přístup)`;
+            } else {
+                if (label.toLowerCase().includes('iphone') || label.toLowerCase().includes('ipad')) {
+                    label = `📱 Externí telefon (${label})`;
+                } else if (label.toLowerCase().includes('facetime') || label.toLowerCase().includes('built-in') || label.toLowerCase().includes('integrovan')) {
+                    label = `💻 Integrovaná kamera (${label})`;
+                } else {
+                    label = `📷 Externí kamera (${label})`;
+                }
+            }
+            option.text = label;
+            cameraSelect.appendChild(option);
+        });
+    }
 
     if (currentValue) {
         cameraSelect.value = currentValue;
@@ -114,6 +146,18 @@ function setupRecorderListeners() {
 
     btnStartRecord.addEventListener('click', startRecordingSequence);
     btnStopRecord.addEventListener('click', stopRecordingSequence);
+
+    // Automatické obnovení zámku obrazovky po návratu do aplikace během nahrávání
+    document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible' && recState.isRecording) {
+            try {
+                if ('wakeLock' in navigator) {
+                    recState.wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Zámek obrazovky obnoven.');
+                }
+            } catch (err) { console.log('Zámek obrazovky nelze obnovit:', err); }
+        }
+    });
 }
 
 async function startCameraPreview(deviceId) {
@@ -132,16 +176,34 @@ async function startCameraPreview(deviceId) {
                 if (recState.isRecording) stopRecordingSequence();
             };
         } else {
-            // Request Physical Camera - more relaxed for iPhone/Continuity
-            const constraints = {
-                video: { 
-                    deviceId: deviceId ? { ideal: deviceId } : undefined,
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                },
-                audio: true
-            };
+            // Request Physical Camera based on selection
+            let constraints = { audio: true };
+            if (deviceId === 'environment') {
+                constraints.video = { 
+                    facingMode: { ideal: "environment" },
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                };
+            } else if (deviceId === 'user') {
+                constraints.video = { 
+                    facingMode: { ideal: "user" },
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                };
+            } else {
+                constraints.video = { 
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                };
+            }
             recState.stream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            // Auto-refresh the select list so real camera names populate once permissions are given
+            navigator.mediaDevices.enumerateDevices().then(devices => {
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                populateCameraSelect(videoDevices);
+            }).catch(e => console.log(e));
         }
         
         // Show preview
@@ -225,6 +287,16 @@ async function startRecordingSequence() {
     recState.recordingStartTime = Date.now();
     startTimer();
 
+    // Zámek obrazovky - zabrání zhasnutí displeje během natáčení
+    try {
+        if ('wakeLock' in navigator) {
+            recState.wakeLock = await navigator.wakeLock.request('screen');
+            console.log('Zámek obrazovky aktivován. Displej nezhasne.');
+        }
+    } catch (err) { 
+        console.log('Zámek obrazovky selhal:', err); 
+    }
+
     const recorder = new MediaRecorder(recState.stream, { 
         mimeType,
         videoBitsPerSecond: 8000000 // 8 Mbps for premium quality
@@ -266,6 +338,13 @@ function stopRecordingSequence() {
 
     recState.isRecording = false;
     stopTimer();
+
+    // Uvolnění zámku obrazovky
+    if (recState.wakeLock !== null) {
+        recState.wakeLock.release().catch(console.error);
+        recState.wakeLock = null;
+        console.log('Zámek obrazovky uvolněn.');
+    }
 
     btnStartRecord.style.display = 'flex';
     btnStopRecord.style.display = 'none';
