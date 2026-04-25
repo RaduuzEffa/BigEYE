@@ -84,11 +84,6 @@
                 </div>
                 
                 <div class="player-container hidden" id="player-container" style="position: relative;">
-                    <!-- Floating Mute Toggle Button -->
-                    <button id="btn-toggle-mute" class="btn outline-btn" title="Vypnout/zapnout zvuk (přehrávání)" style="position: absolute; top: 15px; left: 15px; z-index: 50; box-shadow: 0 4px 12px rgba(0,0,0,0.5); background: rgba(0,0,0,0.6); color: white; border: none; border-radius: 50%; width: 44px; height: 44px; padding: 0; display: flex; align-items: center; justify-content: center;">
-                        <i class="ph ph-speaker-slash" id="mute-icon" style="font-size: 1.5rem;"></i>
-                    </button>
-
                     <!-- Standardní prohlížečové ovládání pro 100% funkčnost -->
                     <video id="main-player" controls playsinline></video>
                     
@@ -102,18 +97,6 @@
                     <!-- Overlay pro nástroje kreslení ve fullscreenu -->
                     <div id="fullscreen-drawing-tools" class="fullscreen-tools hidden"></div>
                     
-                    <!-- Vizuální směrové šipky (viditelné i ve fullscreenu) -->
-                    <div class="on-screen-arrows" id="on-screen-arrows">
-                        <div class="arrow-row">
-                            <button class="arrow-btn" data-dir="up"><i class="ph ph-caret-up"></i></button>
-                        </div>
-                        <div class="arrow-row">
-                            <button class="arrow-btn" data-dir="left"><i class="ph ph-caret-left"></i></button>
-                            <button class="arrow-btn" data-dir="down"><i class="ph ph-caret-down"></i></button>
-                            <button class="arrow-btn" data-dir="right"><i class="ph ph-caret-right"></i></button>
-                        </div>
-                    </div>
-
                     <!-- Náhled kamery -->
                     <video id="camera-preview" autoplay muted playsinline class="hidden"></video>
                 </div>

@@ -50,35 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Sync drawing tools for fullscreen
     document.addEventListener('fullscreenchange', syncToolsUI);
     document.addEventListener('webkitfullscreenchange', syncToolsUI);
-    
-    // Setup Mute Toggle
-    setupMuteToggle();
 });
-
-function setupMuteToggle() {
-    const btnToggleMute = document.getElementById('btn-toggle-mute');
-    const muteIcon = document.getElementById('mute-icon');
-    let isGloballyMuted = true; // Default state because camera preview starts muted
-    
-    if (btnToggleMute) {
-        btnToggleMute.addEventListener('click', () => {
-            isGloballyMuted = !isGloballyMuted;
-            
-            if (isGloballyMuted) {
-                muteIcon.className = 'ph ph-speaker-slash';
-                btnToggleMute.style.color = 'white';
-            } else {
-                muteIcon.className = 'ph ph-speaker-high';
-                btnToggleMute.style.color = '#10b981'; // Zelená pro aktivní zvuk
-            }
-            
-            const cameraPreview = document.getElementById('camera-preview');
-            const mainPlayer = document.getElementById('main-player');
-            if (cameraPreview) cameraPreview.muted = isGloballyMuted;
-            if (mainPlayer) mainPlayer.muted = isGloballyMuted;
-        });
-    }
-}
 
 function syncToolsUI() {
     const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
@@ -426,16 +398,18 @@ function renderQueue() {
         removeBtn.title = 'Odebrat ze seznamu';
         removeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            // ZDE JE OPRAVA INDEXU! (Použijeme filter místo splice přes index)
             state.activeQueue = state.activeQueue.filter(f => f.name !== file.name);
             
             if (state.currentVideo && state.currentVideo.name === file.name) {
                 state.currentVideo = null;
-                mainPlayer.src = '';
+                mainPlayer.pause();
+                mainPlayer.removeAttribute('src');
+                mainPlayer.load();
                 if (state.activeQueue.length > 0) {
                     loadVideo(state.activeQueue[0]);
                 } else {
                     mainPlayer.style.display = 'none';
+                    playerContainer.classList.add('hidden');
                     dropZone.style.display = 'flex';
                 }
             }
@@ -516,6 +490,7 @@ function stopArrowAction(dir) {
     clearTimeout(arrowState.timer);
     clearInterval(arrowState.interval);
     mainPlayer.pause();
+    mainPlayer.playbackRate = 1.0; // Reset to normal speed
     
     if (!arrowState.isHolding) {
         executeTapAction(dir);
@@ -537,19 +512,17 @@ function executeHoldAction(dir) {
     if (dir === 'right') {
         mainPlayer.playbackRate = 0.25;
         mainPlayer.play().catch(e=>{});
-    } else if (dir === 'up') {
-        mainPlayer.playbackRate = 2.0;
-        mainPlayer.play().catch(e=>{});
     } else if (dir === 'left') {
         mainPlayer.pause();
         arrowState.interval = setInterval(() => {
-            mainPlayer.currentTime = Math.max(0, mainPlayer.currentTime - (0.25 * 0.05));
-        }, 50);
+            mainPlayer.currentTime = Math.max(0, mainPlayer.currentTime - FRAME_TIME);
+        }, 133); // approx 0.25x speed backwards (33ms * 4)
+    } else if (dir === 'up') {
+        // Just jump forward for hold as requested
+        mainPlayer.currentTime += FRAME_TIME * 5;
     } else if (dir === 'down') {
-        mainPlayer.pause();
-        arrowState.interval = setInterval(() => {
-            mainPlayer.currentTime = Math.max(0, mainPlayer.currentTime - (2.0 * 0.05));
-        }, 50);
+        // Just jump backward for hold as requested
+        mainPlayer.currentTime -= FRAME_TIME * 5;
     }
 }
 
@@ -597,6 +570,8 @@ function setupKeyboard() {
                 break;
             case 'y':
             case 'Y':
+            case 'z':
+            case 'Z':
                 toggleFullscreen();
                 break;
         }
@@ -611,24 +586,6 @@ function setupKeyboard() {
         }
     });
 
-    // Visual On-Screen Arrows Setup
-    const visualArrows = document.querySelectorAll('.arrow-btn');
-    visualArrows.forEach(btn => {
-        const dir = btn.getAttribute('data-dir');
-        if (!dir) return; // Skip fullscreen btn
-        
-        btn.addEventListener('mousedown', (e) => startArrowAction(dir, e));
-        btn.addEventListener('mouseup', () => stopArrowAction(dir));
-        btn.addEventListener('mouseleave', () => stopArrowAction(dir));
-        
-        btn.addEventListener('touchstart', (e) => startArrowAction(dir, e), {passive: false});
-        btn.addEventListener('touchend', (e) => {
-            if(e.cancelable) e.preventDefault();
-            stopArrowAction(dir);
-        });
-        btn.addEventListener('touchcancel', () => stopArrowAction(dir));
-    });
-    
     // Custom Fullscreen Button
     const btnFullscreenToggle = document.getElementById('btn-fullscreen-toggle');
     if (btnFullscreenToggle) {
