@@ -518,11 +518,15 @@ function executeHoldAction(dir) {
             mainPlayer.currentTime = Math.max(0, mainPlayer.currentTime - FRAME_TIME);
         }, 133); // approx 0.25x speed backwards (33ms * 4)
     } else if (dir === 'up') {
-        // Just jump forward for hold as requested
-        mainPlayer.currentTime += FRAME_TIME * 5;
+        mainPlayer.pause();
+        arrowState.interval = setInterval(() => {
+            mainPlayer.currentTime += FRAME_TIME * 5;
+        }, 80); // Rychlý převod vpřed
     } else if (dir === 'down') {
-        // Just jump backward for hold as requested
-        mainPlayer.currentTime -= FRAME_TIME * 5;
+        mainPlayer.pause();
+        arrowState.interval = setInterval(() => {
+            mainPlayer.currentTime = Math.max(0, mainPlayer.currentTime - (FRAME_TIME * 5));
+        }, 80); // Rychlý převod vzad
     }
 }
 
@@ -550,8 +554,13 @@ function toggleFullscreen() {
 }
 
 function setupKeyboard() {
-    document.addEventListener('keydown', (e) => {
+    window.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        
+        const handledKeys = ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', ' ', 'y', 'Y', 'z', 'Z'];
+        if (handledKeys.includes(e.key)) {
+            e.stopPropagation(); // Zabrání nativnímu přehrávači v převzetí události, zejména ve fullscreenu
+        }
         
         switch(e.key) {
             case 'ArrowRight': startArrowAction('right', e); break;
@@ -575,16 +584,21 @@ function setupKeyboard() {
                 toggleFullscreen();
                 break;
         }
-    });
+    }, true); // Použití capture phase
 
-    document.addEventListener('keyup', (e) => {
+    window.addEventListener('keyup', (e) => {
+        const handledKeys = ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'];
+        if (handledKeys.includes(e.key)) {
+            e.stopPropagation();
+        }
+        
         switch(e.key) {
             case 'ArrowRight': stopArrowAction('right'); break;
             case 'ArrowLeft': stopArrowAction('left'); break;
             case 'ArrowUp': stopArrowAction('up'); break;
             case 'ArrowDown': stopArrowAction('down'); break;
         }
-    });
+    }, true); // Použití capture phase
 
     // Custom Fullscreen Button
     const btnFullscreenToggle = document.getElementById('btn-fullscreen-toggle');
